@@ -17,26 +17,26 @@ namespace GoToDef
     [Export(typeof(IKeyProcessorProvider))]
     [TextViewRole(PredefinedTextViewRoles.Document)]
     [ContentType("code")]
-    [Name("GotoDef")]
-    [Order(Before = "VisualStudioKeyboardProcessor")]
-    internal sealed class GoToDefKeyProcessorProvider : IKeyProcessorProvider
+    [Name("AltPeek")]
+    [Order(Before = "GoToDefKeyProcessorProvider")]
+    internal sealed class AltPeekProcessorProvider : IKeyProcessorProvider
     {
         public KeyProcessor GetAssociatedProcessor(IWpfTextView view)
         {
-            return view.Properties.GetOrCreateSingletonProperty(typeof(GoToDefKeyProcessor),
-                                                                () => new GoToDefKeyProcessor(CtrlKeyState.GetStateForView(view)));
+            return view.Properties.GetOrCreateSingletonProperty(typeof(AltPeekKeyProcessor),
+                                                                () => new AltPeekKeyProcessor(AltKeyState.GetStateForView(view)));
         }
     }
 
     /// <summary>
-    /// The state of the control key for a given view, which is kept up-to-date by a combination of the
+    /// The state of the alt key for a given view, which is kept up-to-date by a combination of the
     /// key processor and the mouse process
     /// </summary>
-    internal sealed class CtrlKeyState
+    internal sealed class AltKeyState
     {
-        internal static CtrlKeyState GetStateForView(ITextView view)
+        internal static AltKeyState GetStateForView(ITextView view)
         {
-            return view.Properties.GetOrCreateSingletonProperty(typeof(CtrlKeyState), () => new CtrlKeyState());
+            return view.Properties.GetOrCreateSingletonProperty(typeof(AltKeyState), () => new AltKeyState());
         }
 
         bool _enabled = false;
@@ -45,11 +45,11 @@ namespace GoToDef
         {
             get
             {
-                // Check and see if ctrl is down but we missed it somehow.
-                bool ctrlDown = (Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+                // Check and see if alt is down but we missed it somehow.
+                bool altDown = (Keyboard.Modifiers & ModifierKeys.Alt) != 0 &&
                                 (Keyboard.Modifiers & ModifierKeys.Shift) == 0;
-                if (ctrlDown != _enabled)
-                    Enabled = ctrlDown;
+                if (altDown != _enabled)
+                    Enabled = altDown;
 
                 return _enabled;
             }
@@ -59,31 +59,31 @@ namespace GoToDef
                 _enabled = value;
                 if (oldVal != _enabled)
                 {
-                    var temp = CtrlKeyStateChanged;
+                    var temp = AltKeyStateChanged;
                     if (temp != null)
                         temp(this, new EventArgs());
                 }
             }
         }
 
-        internal event EventHandler<EventArgs> CtrlKeyStateChanged;
+        internal event EventHandler<EventArgs> AltKeyStateChanged;
     }
 
     /// <summary>
-    /// Listen for the control key being pressed or released to update the CtrlKeyStateChanged for a view.
+    /// Listen for the alt key being pressed or released to update the AltKeyStateChanged for a view.
     /// </summary>
-    internal sealed class GoToDefKeyProcessor : KeyProcessor
+    internal sealed class AltPeekKeyProcessor : KeyProcessor
     {
-        CtrlKeyState _state;
+        AltKeyState _state;
 
-        public GoToDefKeyProcessor(CtrlKeyState state)
+        public AltPeekKeyProcessor(AltKeyState state)
         {
             _state = state;
         }
 
         void UpdateState(KeyEventArgs args)
         {
-            _state.Enabled = (args.KeyboardDevice.Modifiers & ModifierKeys.Control) != 0 &&
+            _state.Enabled = (args.KeyboardDevice.Modifiers & ModifierKeys.Alt) != 0 &&
                              (args.KeyboardDevice.Modifiers & ModifierKeys.Shift) == 0;
         }
 
@@ -101,9 +101,9 @@ namespace GoToDef
     [Export(typeof(IMouseProcessorProvider))]
     [TextViewRole(PredefinedTextViewRoles.Document)]
     [ContentType("code")]
-    [Name("GotoDef")]
-    [Order(Before = "WordSelection")]
-    internal sealed class GoToDefMouseHandlerProvider : IMouseProcessorProvider
+    [Name("AltPeek")]
+    [Order(Before = "GoToDefMouseHandlerProvider")]
+    internal sealed class AltPeekMouseHandlerProvider : IMouseProcessorProvider
     {
         [Import]
         IClassifierAggregatorService AggregatorFactory = null;
@@ -123,11 +123,11 @@ namespace GoToDef
             if (shellCommandDispatcher == null)
                 return null;
 
-            return new GoToDefMouseHandler(view,
+            return new AltPeekMouseHandler(view,
                                            shellCommandDispatcher,
                                            AggregatorFactory.GetClassifier(buffer),
                                            NavigatorService.GetTextStructureNavigator(buffer),
-                                           CtrlKeyState.GetStateForView(view));
+                                           AltKeyState.GetStateForView(view));
         }
 
         #region Private helpers
@@ -147,16 +147,16 @@ namespace GoToDef
     /// Handle ctrl+click on valid elements to send GoToDefinition to the shell.  Also handle mouse moves
     /// (when control is pressed) to highlight references for which GoToDefinition will (likely) be valid.
     /// </summary>
-    internal sealed class GoToDefMouseHandler : MouseProcessorBase
+    internal sealed class AltPeekMouseHandler : MouseProcessorBase
     {
         IWpfTextView _view;
-        CtrlKeyState _state;
+        AltKeyState _state;
         IClassifier _aggregator;
         ITextStructureNavigator _navigator;
         IOleCommandTarget _commandTarget;
 
-        public GoToDefMouseHandler(IWpfTextView view, IOleCommandTarget commandTarget, IClassifier aggregator,
-                                   ITextStructureNavigator navigator, CtrlKeyState state)
+        public AltPeekMouseHandler(IWpfTextView view, IOleCommandTarget commandTarget, IClassifier aggregator,
+                                   ITextStructureNavigator navigator, AltKeyState state)
         {
             _view = view;
             _commandTarget = commandTarget;
@@ -164,7 +164,7 @@ namespace GoToDef
             _aggregator = aggregator;
             _navigator = navigator;
 
-            _state.CtrlKeyStateChanged += (sender, args) =>
+            _state.AltKeyStateChanged += (sender, args) =>
             {
                 if (_state.Enabled)
                     this.TryHighlightItemUnderMouse(RelativeToView(Mouse.PrimaryDevice.GetPosition(_view.VisualElement)));
@@ -231,7 +231,7 @@ namespace GoToDef
 
                     this.SetHighlightSpan(null);
                     _view.Selection.Clear();
-                    this.DispatchGoToDef();
+                    this.DispatchAltPeek();
 
                     e.Handled = true;
                 }
@@ -337,11 +337,11 @@ namespace GoToDef
             return false;
         }
 
-        bool DispatchGoToDef()
+        bool DispatchAltPeek()
         {
-            Guid cmdGroup = VSConstants.GUID_VSStandardCommandSet97;
+            Guid cmdGroup = Microsoft.VisualStudio.VSConstants.CMDSETID.StandardCommandSet12_guid;
             int hr = _commandTarget.Exec(ref cmdGroup,
-                                         (uint)VSConstants.VSStd97CmdID.GotoDefn,
+                                         (uint)VSConstants.VSStd12CmdID.PeekDefinition,
                                          (uint)OLECMDEXECOPT.OLECMDEXECOPT_DODEFAULT,
                                          System.IntPtr.Zero,
                                          System.IntPtr.Zero);
@@ -351,3 +351,4 @@ namespace GoToDef
         #endregion
     }
 }
+
